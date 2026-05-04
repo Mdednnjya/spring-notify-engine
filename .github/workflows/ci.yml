@@ -140,7 +140,7 @@ jobs:
 
       - name: Extract benchmark metrics
         run: |
-          python3 - <<'EOF'
+          python3 - <<'PYEOF'
           import csv, statistics, os, sys
 
           jtl = 'benchmark/sync-baseline/results.jtl'
@@ -153,34 +153,34 @@ jobs:
           if not rows:
               print("Empty results"); sys.exit(1)
 
-          latencies   = [int(r['elapsed'])   for r in rows]
-          timestamps  = [int(r['timeStamp']) for r in rows]
-          avg_ms      = statistics.mean(latencies)
-          p99_ms      = sorted(latencies)[int(len(latencies) * 0.99)]
-          duration_s  = (max(timestamps) - min(timestamps) + avg_ms) / 1000
-          throughput  = len(latencies) / duration_s
-          errors      = sum(1 for r in rows if r.get('success','').lower() != 'true')
-          error_pct   = errors / len(rows) * 100
+          latencies  = [int(r['elapsed'])   for r in rows]
+          timestamps = [int(r['timeStamp']) for r in rows]
+          avg_ms     = statistics.mean(latencies)
+          p99_ms     = sorted(latencies)[int(len(latencies) * 0.99)]
+          duration_s = (max(timestamps) - min(timestamps) + avg_ms) / 1000
+          throughput = len(latencies) / duration_s
+          errors     = sum(1 for r in rows if r.get('success', '').lower() != 'true')
+          error_pct  = errors / len(rows) * 100
 
-          md = f"""# Sync Baseline — JMeter Results
+          row = "| {:<20} | {:<20} |\n".format
+          sep = "|{:-<22}|{:-<22}|\n".format
 
-| Metric | Value |
-|--------|-------|
-| Avg Latency | {avg_ms:.0f}ms |
-| P99 Latency | {p99_ms}ms |
-| Throughput | {throughput:.1f} req/s |
-| Concurrent Users | 1000 |
-| Total Requests | {len(rows)} |
-| Error Rate | {error_pct:.1f}% |
-| Endpoint | POST /notifications |
+          md  = "# Sync Baseline - JMeter Results\n\n"
+          md += row("Metric", "Value")
+          md += sep("", "")
+          md += row("Avg Latency", f"{avg_ms:.0f}ms")
+          md += row("P99 Latency", f"{p99_ms}ms")
+          md += row("Throughput", f"{throughput:.1f} req/s")
+          md += row("Concurrent Users", "1000")
+          md += row("Total Requests", str(len(rows)))
+          md += row("Error Rate", f"{error_pct:.1f}%")
+          md += row("Endpoint", "POST /notifications")
+          md += "\nAvg latency reflects Thread.sleep(2000) in sync dispatch.\n"
 
-Avg latency reflects `Thread.sleep(2000)` in synchronous dispatch.
-Every request holds the API thread for the full SMTP simulation duration.
-"""
           with open('benchmark/sync-baseline/results.md', 'w') as f:
               f.write(md)
-          print(f"Done — avg {avg_ms:.0f}ms, {throughput:.1f} req/s, {error_pct:.1f}% errors")
-          EOF
+          print(f"Done - avg {avg_ms:.0f}ms, {throughput:.1f} req/s, {error_pct:.1f}% errors")
+          PYEOF
 
       - name: Commit benchmark results
         run: |
