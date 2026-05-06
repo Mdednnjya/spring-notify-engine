@@ -1,21 +1,23 @@
 package com.springnotify.service;
 
-import com.springnotify.dispatcher.MockDispatcher;
 import com.springnotify.model.NotificationEvent;
 import com.springnotify.model.NotificationRequest;
 import com.springnotify.model.NotificationStatus;
 import com.springnotify.repository.NotificationRepository;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
-    private final NotificationRepository repo;
-    private final MockDispatcher         dispatcher;
+    private static final String QUEUE_KEY = "notification:queue";
 
-    public NotificationServiceImpl(NotificationRepository repo, MockDispatcher dispatcher) {
-        this.repo       = repo;
-        this.dispatcher = dispatcher;
+    private final NotificationRepository repo;
+    private final StringRedisTemplate    redis;
+
+    public NotificationServiceImpl(NotificationRepository repo, StringRedisTemplate redis) {
+        this.repo  = repo;
+        this.redis = redis;
     }
 
     @Override
@@ -41,12 +43,8 @@ public class NotificationServiceImpl implements NotificationService {
         event.setRetryCount(0);
         repo.save(event);
 
-        // dispatch — blocks caller thread
-        dispatcher.dispatch(event.getRecipient(), event.getType().name(), event.getPayload());
-
-        // state update
-        event.setStatus(NotificationStatus.DELIVERED);
-        repo.save(event);
+        // enqueue
+        redis.opsForList().rightPush(QUEUE_KEY, event.getId().toString());
 
         return event;
     }

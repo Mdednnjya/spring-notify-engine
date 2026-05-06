@@ -2,12 +2,12 @@
 
 | Metric               | Value                |
 |----------------------|----------------------|
-| Avg Latency          | 61ms                 |
-| P99 Latency          | 731ms                |
-| Throughput           | 101.3 req/s          |
+| Avg Latency          | 28054ms              |
+| P99 Latency          | 31995ms              |
+| Throughput           | 26.4 req/s           |
 | Concurrent Users     | 1000                 |
 | Total Requests       | 1000                 |
-| Error Rate           | 0.0%                 |
+| Error Rate           | 80.0%                |
 | Endpoint             | POST /notifications  |
 
-Results from asynchronous dispatch with Redis queue and 1000 concurrent users.
+Results from synchronous dispatch with 1000 concurrent users.
