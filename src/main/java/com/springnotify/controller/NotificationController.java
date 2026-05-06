@@ -18,6 +18,6 @@ public class NotificationController {
 
     @PostMapping
     public ResponseEntity<NotificationEvent> submit(@RequestBody NotificationRequest req) {
-        return ResponseEntity.ok(service.submit(req));
+        return ResponseEntity.accepted().body(service.submit(req));
     }
 }
