@@ -7,7 +7,7 @@ public class MockDispatcher {
 
     public void dispatch(String recipient, String type, String payload) {
         try {
-            // simulate SMTP latency — blocks caller thread
+            // simulate SMTP latency — runs on worker thread, not request thread
             Thread.sleep(2000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
