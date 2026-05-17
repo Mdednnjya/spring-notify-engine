@@ -7,6 +7,8 @@ import com.springnotify.repository.NotificationRepository;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
+
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
@@ -32,6 +34,10 @@ public class NotificationServiceImpl implements NotificationService {
         if (req.getType() == null) {
             throw new IllegalArgumentException("type required");
         }
+
+        // cache hit
+        Optional<NotificationEvent> existing = repo.findByIdempotencyKey(req.getIdempotencyKey());
+        if (existing.isPresent()) return existing.get();
 
         // save
         NotificationEvent event = new NotificationEvent();

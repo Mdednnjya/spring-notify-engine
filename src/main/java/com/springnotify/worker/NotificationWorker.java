@@ -20,14 +20,15 @@ public class NotificationWorker {
     private final NotificationRepository repo;
     private final MockDispatcher         dispatcher;
     private final StringRedisTemplate    redis;
+    private final int                    maxRetry;
 
-    @Value("${notification.max-retry}")
-    private int maxRetry;
-
-    public NotificationWorker(NotificationRepository repo, MockDispatcher dispatcher, StringRedisTemplate redis) {
+    public NotificationWorker(NotificationRepository repo, MockDispatcher dispatcher,
+                              StringRedisTemplate redis,
+                              @Value("${notification.max-retry}") int maxRetry) {
         this.repo       = repo;
         this.dispatcher = dispatcher;
         this.redis      = redis;
+        this.maxRetry   = maxRetry;
     }
 
     @Scheduled(fixedDelay = 1000)
