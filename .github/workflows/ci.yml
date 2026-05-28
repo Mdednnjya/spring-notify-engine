@@ -53,7 +53,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/feat/sync-baseline' || github.ref == 'refs/heads/feat/async-dispatch'
+    if: github.ref == 'refs/heads/feat/benchmark' || github.ref == 'refs/heads/feat/sync-baseline' || github.ref == 'refs/heads/feat/async-dispatch'
 
     services:
       postgres:
@@ -96,10 +96,63 @@ jobs:
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
 
-      - name: Start application
+      - name: Install JMeter
         run: |
-          nohup java -jar target/spring-notify-engine-*.jar > app.log 2>&1 &
-          echo $! > .app.pid
+          wget -q https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
+          tar -xzf apache-jmeter-5.6.3.tgz
+          echo "$PWD/apache-jmeter-5.6.3/bin" >> $GITHUB_PATH
+
+      - name: Install nginx
+        run: sudo apt-get install -y nginx
+
+      - name: Run scale benchmark
+        run: |
+          mkdir -p benchmark/horizontal-scale
+          JAR=$(ls target/spring-notify-engine-*.jar | head -1)
+          for N in 1 2 3; do
+            echo "=== Scenario: $N instance(s) ==="
+            PIDS=""
+            for i in $(seq 1 $N); do
+              PORT=$((8080 + i))
+              SERVER_PORT=$PORT nohup java -jar "$JAR" > app-${N}-${i}.log 2>&1 &
+              PIDS="$PIDS $!"
+            done
+
+            {
+              printf "upstream app_cluster {\n"
+              for i in $(seq 1 $N); do
+                printf "  server localhost:%d;\n" $((8080 + i))
+              done
+              printf "}\n"
+              printf "server { listen 9090; location / { proxy_pass http://app_cluster; } }\n"
+            } | sudo tee /etc/nginx/conf.d/benchmark.conf > /dev/null
+            sudo nginx -t
+            sudo nginx -s reload 2>/dev/null || sudo nginx
+
+            for i in $(seq 1 $N); do
+              PORT=$((8080 + i))
+              for attempt in $(seq 1 60); do
+                if curl -sf http://localhost:${PORT}/actuator/health 2>/dev/null | grep -q '"status":"UP"'; then
+                  echo "Instance $i ready on :${PORT}"
+                  break
+                fi
+                sleep 2
+                if [ "$attempt" = "60" ]; then
+                  echo "Instance $i failed to start"; cat app-${N}-${i}.log; exit 1
+                fi
+              done
+            done
+
+            JVM_ARGS="-Xmx512m" jmeter -n \
+              -t benchmark/horizontal-scale/test-plan.jmx \
+              -l benchmark/horizontal-scale/results-${N}.jtl \
+              -Jjmeter.save.saveservice.output_format=csv \
+              -j benchmark/horizontal-scale/jmeter-${N}.log
+
+            for PID in $PIDS; do kill "$PID" 2>/dev/null || true; done
+            for PID in $PIDS; do wait "$PID" 2>/dev/null || true; done
+            sleep 3
+          done
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/notifydb
           SPRING_DATASOURCE_USERNAME: notify
@@ -107,74 +160,53 @@ jobs:
           SPRING_DATA_REDIS_HOST: localhost
           SPRING_DATA_REDIS_PORT: 6379
 
-      - name: Wait for application to be ready
-        run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8080/actuator/health 2>/dev/null | grep -q '"status":"UP"'; then
-              echo "Application ready after ${i}s"
-              exit 0
-            fi
-            echo "Waiting... attempt $i"
-            sleep 2
-          done
-          echo "Application did not start in time"
-          cat app.log
-          exit 1
-
-      - name: Install JMeter
-        run: |
-          wget -q https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
-          tar -xzf apache-jmeter-5.6.3.tgz
-          echo "$PWD/apache-jmeter-5.6.3/bin" >> $GITHUB_PATH
-
-      - name: Run JMeter benchmark
-        run: |
-          mkdir -p benchmark/load-test
-          JVM_ARGS="-Xmx1g" jmeter -n \
-            -t benchmark/load-test/test-plan.jmx \
-            -l benchmark/load-test/results.jtl \
-            -Jjmeter.save.saveservice.output_format=csv \
-            -j benchmark/load-test/jmeter.log
-
       - name: Extract benchmark metrics
         run: |
           python3 - <<'PYEOF'
           import csv, statistics, os, sys
 
-          jtl = 'benchmark/load-test/results.jtl'
-          if not os.path.exists(jtl):
-              print("No results file"); sys.exit(1)
+          results = {}
+          for n in [1, 2, 3]:
+              jtl = "benchmark/horizontal-scale/results-" + str(n) + ".jtl"
+              if not os.path.exists(jtl):
+                  print("No results file for " + str(n) + " instance(s)"); sys.exit(1)
+              with open(jtl) as f:
+                  rows = [r for r in csv.DictReader(f) if r.get("elapsed")]
+              if not rows:
+                  print("Empty results for " + str(n) + " instance(s)"); sys.exit(1)
+              latencies  = [int(r["elapsed"])   for r in rows]
+              timestamps = [int(r["timeStamp"]) for r in rows]
+              avg_ms     = statistics.mean(latencies)
+              p99_ms     = sorted(latencies)[int(len(latencies) * 0.99)]
+              duration_s = (max(timestamps) - min(timestamps) + avg_ms) / 1000
+              throughput = len(latencies) / duration_s
+              errors     = sum(1 for r in rows if r.get("success", "").lower() != "true")
+              error_pct  = errors / len(rows) * 100
+              results[n] = {"avg": avg_ms, "p99": p99_ms, "rps": throughput, "err": error_pct}
 
-          with open(jtl) as f:
-              rows = [r for r in csv.DictReader(f) if r.get('elapsed')]
+          row = "| {:<18} | {:<18} | {:<18} | {:<18} |\n".format
+          sep = "|{:-<20}|{:-<20}|{:-<20}|{:-<20}|\n".format
 
-          if not rows:
-              print("Empty results"); sys.exit(1)
-
-          latencies  = [int(r['elapsed'])   for r in rows]
-          timestamps = [int(r['timeStamp']) for r in rows]
-          avg_ms     = statistics.mean(latencies)
-          p99_ms     = sorted(latencies)[int(len(latencies) * 0.99)]
-          duration_s = (max(timestamps) - min(timestamps) + avg_ms) / 1000
-          throughput = len(latencies) / duration_s
-          errors     = sum(1 for r in rows if r.get('success', '').lower() != 'true')
-          error_pct  = errors / len(rows) * 100
-
-          row = "| {:<20} | {:<20} |\n".format
-          sep = "|{:-<22}|{:-<22}|\n".format
-
-          md  = "# Load Test - JMeter Results\n\n"
-          md += row("Metric", "Value")
-          md += sep("", "")
-          md += row("Avg Latency", f"{avg_ms:.0f}ms")
-          md += row("P99 Latency", f"{p99_ms}ms")
-          md += row("Throughput", f"{throughput:.1f} req/s")
-          md += row("Concurrent Users", "1000")
-          md += row("Total Requests", str(len(rows)))
-          md += row("Error Rate", f"{error_pct:.1f}%")
-          md += row("Endpoint", "POST /notifications")
+          md  = "# Horizontal Scale Benchmark\n\n"
+          md += row("Metric", "1 instance", "2 instances", "3 instances")
+          md += sep("", "", "", "")
+          md += row("Avg Latency",
+                    str(int(results[1]["avg"])) + "ms",
+                    str(int(results[2]["avg"])) + "ms",
+                    str(int(results[3]["avg"])) + "ms")
+          md += row("P99 Latency",
+                    str(results[1]["p99"]) + "ms",
+                    str(results[2]["p99"]) + "ms",
+                    str(results[3]["p99"]) + "ms")
+          md += row("Throughput",
+                    "{:.1f} req/s".format(results[1]["rps"]),
+                    "{:.1f} req/s".format(results[2]["rps"]),
+                    "{:.1f} req/s".format(results[3]["rps"]))
+          md += row("Error Rate",
+                    "{:.1f}%".format(results[1]["err"]),
+                    "{:.1f}%".format(results[2]["err"]),
+                    "{:.1f}%".format(results[3]["err"]))
           md += "\nResults printed to CI log — commit results.md manually after reviewing.\n"
 
           print(md)
-          print(f"Done - avg {avg_ms:.0f}ms, {throughput:.1f} req/s, {error_pct:.1f}% errors")
           PYEOF
