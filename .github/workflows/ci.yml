@@ -143,7 +143,7 @@ jobs:
               done
             done
 
-            JVM_ARGS="-Xmx512m" jmeter -n \
+            JVM_ARGS="-Xmx1g" jmeter -n \
               -t benchmark/horizontal-scale/test-plan.jmx \
               -l benchmark/horizontal-scale/results-${N}.jtl \
               -Jjmeter.save.saveservice.output_format=csv \
