@@ -119,12 +119,13 @@ jobs:
             done
 
             {
-              printf "upstream app_cluster {\n"
+              printf "upstream appcluster {\n"
               for i in $(seq 1 $N); do
                 printf "  server localhost:%d;\n" $((8080 + i))
               done
               printf "}\n"
-              printf "server { listen 9090; location / { proxy_pass http://app_cluster; } }\n"
+              printf 'server { listen 9090; location / { proxy_pass http://appcluster; proxy_set_header Host $host; } }'
+              printf "\n"
             } | sudo tee /etc/nginx/conf.d/benchmark.conf > /dev/null
             sudo nginx -t
             sudo nginx -s reload 2>/dev/null || sudo nginx
