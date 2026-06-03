@@ -35,7 +35,7 @@ public class NotificationWorker {
     public void processNext() {
         // poll
         String eventId = redis.opsForList().leftPop(QUEUE_KEY, Duration.ofSeconds(5));
-        if (eventId == null) return;
+        if (eventId == null || eventId.isBlank()) return;
 
         // fetch
         NotificationEvent event = repo.findById(UUID.fromString(eventId)).orElse(null);
