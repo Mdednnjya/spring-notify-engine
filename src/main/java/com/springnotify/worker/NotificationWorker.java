@@ -33,12 +33,15 @@ public class NotificationWorker {
 
     @Scheduled(fixedDelay = 1000)
     public void processNext() {
+
         // poll
         String eventId = redis.opsForList().leftPop(QUEUE_KEY, Duration.ofSeconds(5));
+
         if (eventId == null || eventId.isBlank()) return;
 
         // fetch
         NotificationEvent event = repo.findById(UUID.fromString(eventId)).orElse(null);
+
         if (event == null) return;
 
         // idempotency check
@@ -53,12 +56,15 @@ public class NotificationWorker {
             // state update
             event.setStatus(NotificationStatus.DELIVERED);
             repo.save(event);
+
         } catch (Exception e) {
             event.setRetryCount(event.getRetryCount() + 1);
+
             if (event.getRetryCount() >= maxRetry) {
                 // dead letter
                 event.setStatus(NotificationStatus.FAILED);
                 repo.save(event);
+                
             } else {
                 // re-enqueue
                 event.setStatus(NotificationStatus.PENDING);
