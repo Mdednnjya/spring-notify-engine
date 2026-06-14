@@ -21,6 +21,7 @@ services:
     build: .
     expose:
       - "8080"
+    restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notifydb
       SPRING_DATASOURCE_USERNAME: notify
@@ -30,6 +31,15 @@ services:
     depends_on:
       - postgres
       - redis
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "9090:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
 
 volumes:
   postgres_data:

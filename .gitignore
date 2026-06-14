@@ -6,3 +6,5 @@ CLAUDE.md
 .env
 *.class
 *.log
+
+internal.md

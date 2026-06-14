@@ -24,19 +24,24 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public NotificationEvent submit(NotificationRequest req) {
+
         // guard
         if (req.getIdempotencyKey() == null || req.getIdempotencyKey().isBlank()) {
             throw new IllegalArgumentException("idempotencyKey required");
         }
+        
         if (req.getRecipient() == null || req.getRecipient().isBlank()) {
             throw new IllegalArgumentException("recipient cannot be empty");
         }
+
+        
         if (req.getType() == null) {
             throw new IllegalArgumentException("type required");
         }
 
         // cache hit
         Optional<NotificationEvent> existing = repo.findByIdempotencyKey(req.getIdempotencyKey());
+        
         if (existing.isPresent()) return existing.get();
 
         // save

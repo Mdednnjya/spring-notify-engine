@@ -9,6 +9,7 @@ public class MockDispatcher {
         try {
             // simulate SMTP latency — runs on worker thread, not request thread
             Thread.sleep(2000);
+            
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("dispatch interrupted: " + e.getMessage(), e);
